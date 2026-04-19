@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "k-token-merging"
+version = "0.1.0"
+description = "Open-source release of K-Token Merging for latent-space prompt compression."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "datasets",
+    "pandas",
+    "peft",
+    "tensorboard",
+    "torch",
+    "tqdm",
+    "transformers",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

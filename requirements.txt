@@ -1,0 +1,8 @@
+datasets
+pandas
+peft
+tensorboard
+torch
+tqdm
+transformers
+

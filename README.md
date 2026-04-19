@@ -164,9 +164,3 @@ Following the paper:
 5. Compute training loss only on the uncompressed answer tokens.
 
 This preserves standard generation while reducing the effective input length during prefill.
-
-## Notes
-
-- The released runners are a cleaned open-source extraction of the original research code, not a byte-for-byte export of the internal workspace.
-- The original paper material remains available in [`paper/`](paper), including the LaTeX source in [paper/acl_latex.tex](paper/acl_latex.tex).
-- The README figures were exported from the original paper figures under `paper/Figure/`.

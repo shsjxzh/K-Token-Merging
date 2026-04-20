@@ -27,6 +27,9 @@ CURRICULUM_STAGE_CONFIGS: dict[str, StageConfig] = {
 }
 
 
+DEFAULT_NUM_TREES = 500000
+
+
 @dataclass
 class Node:
     value: str
@@ -219,7 +222,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-nodes", type=int, required=True)
     parser.add_argument("--min-children", type=int, default=0)
     parser.add_argument("--max-children", type=int, default=3)
-    parser.add_argument("--num-trees", type=int, default=1000)
+    parser.add_argument("--num-trees", type=int, default=DEFAULT_NUM_TREES)
     parser.add_argument("--save-dir", type=Path, required=True)
     parser.add_argument("--stage-name", type=str)
     parser.add_argument("--train-ratio", type=float, default=0.98)

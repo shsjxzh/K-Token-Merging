@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from generate_data import CURRICULUM_STAGE_CONFIGS, generate_dataset
+from generate_data import CURRICULUM_STAGE_CONFIGS, DEFAULT_NUM_TREES, generate_dataset
 
 
 DEFAULT_STAGES = ["small", "xsmall", "medium", "xmedium", "large", "x3large"]
@@ -30,7 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--num-trees",
         type=int,
-        default=1000,
+        default=DEFAULT_NUM_TREES,
         help="Number of tree files to generate per stage.",
     )
     parser.add_argument("--train-ratio", type=float, default=0.98)

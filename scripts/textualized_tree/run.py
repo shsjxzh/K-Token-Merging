@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from pathlib import Path
@@ -16,6 +17,11 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import AdamW
 from torch.utils.data import DataLoader, DistributedSampler
 from tqdm.auto import tqdm
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SRC_ROOT = REPO_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 
 from k_token_merging import (
     build_prefill_embeddings,
@@ -34,6 +40,40 @@ from k_token_merging.modeling import unwrap_module
 
 
 DEFAULT_STAGES = ["small", "xsmall", "medium", "xmedium", "large", "x3large"]
+DEFAULT_PER_GPU_TRAIN_BATCH_SIZES = {
+    2: {
+        "small": 282,
+        "xsmall": 192,
+        "medium": 144,
+        "xmedium": 96,
+        "large": 48,
+        "x3large": 16,
+    },
+    3: {
+        "small": 282,
+        "xsmall": 192,
+        "medium": 144,
+        "xmedium": 96,
+        "large": 48,
+        "x3large": 16,
+    },
+    4: {
+        "small": 320,
+        "xsmall": 320,
+        "medium": 192,
+        "xmedium": 128,
+        "large": 48,
+        "x3large": 16,
+    },
+}
+DEFAULT_PER_GPU_EVAL_BATCH_SIZES = {
+    "small": 320,
+    "xsmall": 320,
+    "medium": 224,
+    "xmedium": 192,
+    "large": 128,
+    "x3large": 32,
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -45,8 +85,8 @@ def parse_args() -> argparse.Namespace:
     train_parser.add_argument("--tree-data-root", type=Path, required=True)
     train_parser.add_argument("--stages", nargs="+", default=DEFAULT_STAGES)
     train_parser.add_argument("--epochs-per-stage", type=int, default=1)
-    train_parser.add_argument("--batch-size", type=int, default=16)
-    train_parser.add_argument("--eval-batch-size", type=int, default=32)
+    train_parser.add_argument("--per-gpu-batch-size", type=int)
+    train_parser.add_argument("--per-gpu-eval-batch-size", type=int)
     train_parser.add_argument("--learning-rate", type=float, default=1e-4)
     train_parser.add_argument("--grad-accum-steps", type=int, default=1)
     train_parser.add_argument("--stage-accuracy-threshold", type=float, default=85.0)
@@ -62,7 +102,7 @@ def parse_args() -> argparse.Namespace:
     add_shared_args(eval_parser)
     eval_parser.add_argument("--tree-data-root", type=Path, required=True)
     eval_parser.add_argument("--stage", required=True)
-    eval_parser.add_argument("--batch-size", type=int, default=32)
+    eval_parser.add_argument("--per-gpu-eval-batch-size", type=int)
     eval_parser.add_argument("--checkpoint-dir", type=Path, required=True)
     return parser.parse_args()
 
@@ -91,6 +131,31 @@ def gpu_wrap(module: torch.nn.Module, device: torch.device, gpu_rank: int | None
     if gpu_rank is None:
         return DDP(module.to(device))
     return DDP(module.to(device), device_ids=[gpu_rank])
+
+
+def resolve_per_gpu_batch_size(stage: str, merge_factor: int, override: int | None) -> int:
+    if override is not None:
+        return override
+
+    batch_sizes = DEFAULT_PER_GPU_TRAIN_BATCH_SIZES.get(merge_factor)
+    if batch_sizes is None or stage not in batch_sizes:
+        raise ValueError(
+            f"No default per-GPU training batch size for stage '{stage}' and merge factor {merge_factor}. "
+            "Pass --per-gpu-batch-size explicitly."
+        )
+    return batch_sizes[stage]
+
+
+def resolve_per_gpu_eval_batch_size(stage: str, override: int | None) -> int:
+    if override is not None:
+        return override
+
+    if stage not in DEFAULT_PER_GPU_EVAL_BATCH_SIZES:
+        raise ValueError(
+            f"No default per-GPU evaluation batch size for stage '{stage}'. "
+            "Pass --per-gpu-eval-batch-size explicitly."
+        )
+    return DEFAULT_PER_GPU_EVAL_BATCH_SIZES[stage]
 
 
 def process_tree_file(data_dir: Path, filename: str) -> list[dict]:
@@ -149,13 +214,14 @@ def train_worker(
     optimizer_path: str | None,
 ) -> None:
     device, gpu_rank = init_process(rank, world_size, args)
+    per_gpu_batch_size = resolve_per_gpu_batch_size(stage, args.merge_factor, args.per_gpu_batch_size)
 
     data_dir = args.tree_data_root / f"tree_data_{stage}"
     train_csv = data_dir / f"train_file_{stage}.csv"
     train_examples = load_tree_examples(data_dir, train_csv)
     dataset = TextPairDataset(train_examples)
     sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=True)
-    train_loader = DataLoader(dataset, batch_size=args.batch_size, sampler=sampler)
+    train_loader = DataLoader(dataset, batch_size=per_gpu_batch_size, sampler=sampler)
 
     embedding_table = load_embedding_table(args.embedding_file, device=device)
     tokenizer, base_model = load_tokenizer_and_model(args.model_name, device)
@@ -174,7 +240,7 @@ def train_worker(
 
     optimizer = AdamW(list(peft_model.parameters()) + list(compressor.parameters()), lr=args.learning_rate)
     if optimizer_path and Path(optimizer_path).exists():
-        optimizer.load_state_dict(torch.load(optimizer_path, map_location=device))
+        optimizer.load_state_dict(torch.load(optimizer_path, map_location=device, weights_only=True))
 
     peft_model.train()
     compressor.train()
@@ -240,7 +306,8 @@ def train_worker(
             metadata={
                 "stage": stage,
                 "merge_factor": args.merge_factor,
-                "batch_size": args.batch_size,
+                "per_gpu_batch_size": per_gpu_batch_size,
+                "effective_batch_size": per_gpu_batch_size * world_size * args.grad_accum_steps,
                 "grad_accum_steps": args.grad_accum_steps,
                 "epochs_per_stage": args.epochs_per_stage,
             },
@@ -252,13 +319,14 @@ def train_worker(
 def eval_worker(rank: int, world_size: int, stage: str, args: argparse.Namespace) -> None:
     device, _ = init_process(rank, world_size, args)
     checkpoint_dir = args.checkpoint_dir if getattr(args, "checkpoint_dir", None) else args.output_dir / stage / "step_last"
+    per_gpu_eval_batch_size = resolve_per_gpu_eval_batch_size(stage, args.per_gpu_eval_batch_size)
 
     data_dir = args.tree_data_root / f"tree_data_{stage}"
     test_csv = data_dir / f"test_file_{stage}.csv"
     test_examples = load_tree_examples(data_dir, test_csv)
     dataset = TextPairDataset(test_examples)
     sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=False)
-    test_loader = DataLoader(dataset, batch_size=args.eval_batch_size, sampler=sampler)
+    test_loader = DataLoader(dataset, batch_size=per_gpu_eval_batch_size, sampler=sampler)
 
     embedding_table = load_embedding_table(args.embedding_file, device=device)
     tokenizer, base_model = load_tokenizer_and_model(args.model_name, device)
@@ -349,9 +417,13 @@ def run_train(args: argparse.Namespace) -> None:
 
         while True:
             round_index += 1
+            per_gpu_batch_size = resolve_per_gpu_batch_size(stage, args.merge_factor, args.per_gpu_batch_size)
+            effective_batch_size = per_gpu_batch_size * world_size * args.grad_accum_steps
             print(
                 f"Training stage '{stage}' round {round_index} "
-                f"with target accuracy {stage_target:.2f}%"
+                f"with target accuracy {stage_target:.2f}%, "
+                f"per_gpu_batch_size={per_gpu_batch_size}, "
+                f"effective_batch_size={effective_batch_size}."
             )
 
             mp.spawn(

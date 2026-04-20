@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import random
+import sys
 from datetime import timedelta
 from pathlib import Path
 
@@ -16,6 +17,11 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import AdamW
 from torch.utils.data import DataLoader, DistributedSampler
 from tqdm.auto import tqdm
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SRC_ROOT = REPO_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 
 from k_token_merging import (
     build_prefill_embeddings,
@@ -42,8 +48,8 @@ def parse_args() -> argparse.Namespace:
     train_parser.add_argument("--dataset-name", default="Amazon_Fashion")
     train_parser.add_argument("--test-size", type=int, default=50000)
     train_parser.add_argument("--train-sample-fraction", type=float, default=0.1)
-    train_parser.add_argument("--batch-size", type=int, default=2)
-    train_parser.add_argument("--eval-batch-size", type=int, default=16)
+    train_parser.add_argument("--per-gpu-batch-size", type=int, default=2)
+    train_parser.add_argument("--per-gpu-eval-batch-size", type=int, default=16)
     train_parser.add_argument("--epochs", type=int, default=1)
     train_parser.add_argument("--learning-rate", type=float, default=1e-4)
     train_parser.add_argument("--grad-accum-steps", type=int, default=1)
@@ -57,7 +63,7 @@ def parse_args() -> argparse.Namespace:
     add_shared_args(eval_parser)
     eval_parser.add_argument("--dataset-name", default="Amazon_Fashion")
     eval_parser.add_argument("--test-size", type=int, default=50000)
-    eval_parser.add_argument("--batch-size", type=int, default=16)
+    eval_parser.add_argument("--per-gpu-eval-batch-size", type=int, default=16)
     eval_parser.add_argument("--checkpoint-dir", type=Path, required=True)
     return parser.parse_args()
 
@@ -140,7 +146,7 @@ def train_worker(
 
     dataset = TextPairDataset(train_examples)
     sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=True)
-    train_loader = DataLoader(dataset, batch_size=args.batch_size, sampler=sampler)
+    train_loader = DataLoader(dataset, batch_size=args.per_gpu_batch_size, sampler=sampler)
 
     embedding_table = load_embedding_table(args.embedding_file, device=device)
     tokenizer, base_model = load_tokenizer_and_model(args.model_name, device)
@@ -153,7 +159,7 @@ def train_worker(
 
     optimizer = AdamW(list(peft_model.parameters()) + list(compressor.parameters()), lr=args.learning_rate)
     if optimizer_path and Path(optimizer_path).exists():
-        optimizer.load_state_dict(torch.load(optimizer_path, map_location=device))
+        optimizer.load_state_dict(torch.load(optimizer_path, map_location=device, weights_only=True))
 
     peft_model.train()
     compressor.train()
@@ -214,6 +220,8 @@ def train_worker(
                 "dataset": args.dataset_name,
                 "merge_factor": args.merge_factor,
                 "epochs": args.epochs,
+                "per_gpu_batch_size": args.per_gpu_batch_size,
+                "effective_batch_size": args.per_gpu_batch_size * world_size * args.grad_accum_steps,
                 "grad_accum_steps": args.grad_accum_steps,
             },
         )
@@ -228,7 +236,7 @@ def eval_worker(rank: int, world_size: int, args: argparse.Namespace) -> None:
     _, test_examples = load_examples(args.dataset_name, args.test_size, None, args.seed)
     dataset = TextPairDataset(test_examples)
     sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=False)
-    batch_size = args.eval_batch_size if hasattr(args, "eval_batch_size") else args.batch_size
+    batch_size = args.per_gpu_eval_batch_size
     eval_loader = DataLoader(dataset, batch_size=batch_size, sampler=sampler)
 
     embedding_table = load_embedding_table(args.embedding_file, device=device)

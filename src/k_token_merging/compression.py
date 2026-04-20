@@ -3,6 +3,7 @@ from __future__ import annotations
 import pickle
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 
@@ -11,8 +12,12 @@ def load_embedding_table(path: str | Path, device: torch.device | str | None = N
     with open(path, "rb") as handle:
         embedding_table = pickle.load(handle)
 
-    if not torch.is_tensor(embedding_table):
-        embedding_table = torch.tensor(embedding_table)
+    if torch.is_tensor(embedding_table):
+        pass
+    elif isinstance(embedding_table, np.ndarray):
+        embedding_table = torch.from_numpy(embedding_table)
+    else:
+        embedding_table = torch.from_numpy(np.asarray(embedding_table))
     embedding_table = embedding_table.float()
     if device is not None:
         embedding_table = embedding_table.to(device)

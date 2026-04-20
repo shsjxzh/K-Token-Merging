@@ -2,6 +2,8 @@
 
 K-Token Merging is a latent-space prompt compression method for large language models. Instead of feeding every input token embedding into the model, it groups each contiguous block of `K` tokens, merges that block into one learned latent embedding, and lets the language model read the compressed prefix during prefill. Generation still happens in the original token space.
 
+In this codebase, `merge-factor` is exactly that `K`. It denotes how many prompt tokens are compressed into 1 latent token. For example, `--merge-factor 4` means every 4 prompt tokens are merged into 1 compressed token embedding before prefill.
+
 This repository contains the code for training and evaluating that method on three benchmarks:
 
 - Textualized Tree
@@ -29,7 +31,7 @@ At a high level, the training and inference flow is:
 5. Feed the compressed prefix into the base LLM.
 6. Train or evaluate on the original downstream task.
 
-The key idea is that prefill cost depends on the number of embeddings consumed by the model. Compressing the prompt before prefill reduces that length while keeping the rest of the generation pipeline unchanged.
+The key idea is that prefill cost depends on the number of embeddings consumed by the model. Compressing the prompt before prefill reduces that length while keeping the rest of the generation pipeline unchanged. With merge factor `K`, the compressed prompt length is approximately `1/K` of the original prompt length, up to padding to a multiple of `K`.
 
 ## Repository Layout
 
@@ -142,7 +144,7 @@ python scripts/textualized_tree/generate_data.py \
   --max-nodes 30 \
   --min-children 1 \
   --max-children 3 \
-  --num-trees 1000 \
+  --num-trees 500000 \
   --save-dir data/tree_data_large \
   --stage-name large
 ```
@@ -153,9 +155,11 @@ Generate the full curriculum:
 python scripts/textualized_tree/generate_curriculum_datasets.py \
   --output-root data \
   --stages small xsmall medium xmedium large x3large \
-  --num-trees 1000 \
+  --num-trees 500000 \
   --write-summary
 ```
+
+The default `--num-trees` is `500000`, matching the original Token Compression textualized-tree scale. The original release stores `50` JSON shards per stage, and each shard contains examples from `10000` trees (`50000` questions at `5` questions per tree), so each stage corresponds to `500000` trees total.
 
 This produces directories like:
 
@@ -178,14 +182,15 @@ Each `tree_data_<stage>/` folder contains:
 
 Built-in stage settings:
 
-| Stage | Max Depth | Max Nodes | Min Children | Max Children |
-| --- | ---: | ---: | ---: | ---: |
-| `small` | 2 | 3 | 0 | 2 |
-| `xsmall` | 3 | 5 | 0 | 2 |
-| `medium` | 3 | 10 | 0 | 3 |
-| `xmedium` | 4 | 15 | 1 | 3 |
-| `large` | 4 | 30 | 1 | 3 |
-| `x3large` | 4 | 150 | 3 | 5 |
+
+| Stage     | Max Depth | Max Nodes | Min Children | Max Children |
+| --------- | --------: | --------: | -----------: | -----------: |
+| `small`   |         2 |         3 |            0 |            2 |
+| `xsmall`  |         3 |         5 |            0 |            2 |
+| `medium`  |         3 |        10 |            0 |            3 |
+| `xmedium` |         4 |        15 |            1 |            3 |
+| `large`   |         4 |        30 |            1 |            3 |
+| `x3large` |         4 |       150 |            3 |            5 |
 
 Train across the curriculum:
 
@@ -199,6 +204,27 @@ python scripts/textualized_tree/run.py train \
   --grad-accum-steps 4 \
   --output-dir outputs/textualized_tree
 ```
+
+If you do not pass `--per-gpu-batch-size`, the runner uses the original Token Compression per-stage defaults:
+
+| Stage     | Per-GPU Train Batch (`merge_factor=2/3`) | Per-GPU Train Batch (`merge_factor=4`) | Per-GPU Eval Batch |
+| --------- | ---------------------------------------: | -------------------------------------: | -----------------: |
+| `small`   |                                      282 |                                    320 |                320 |
+| `xsmall`  |                                      192 |                                    320 |                320 |
+| `medium`  |                                      144 |                                    192 |                224 |
+| `xmedium` |                                       96 |                                    128 |                192 |
+| `large`   |                                       48 |                                     48 |                128 |
+| `x3large` |                                       16 |                                     16 |                 32 |
+
+You can override those defaults with `--per-gpu-batch-size` and `--per-gpu-eval-batch-size`.
+
+The real training batch size is:
+
+```text
+effective_batch_size = per_gpu_batch_size * num_gpus * grad_accum_steps
+```
+
+For example, `per_gpu_batch_size=48`, `num_gpus=4`, and `grad_accum_steps=4` gives an effective batch size of `768`.
 
 Curriculum behavior matches the original training recipe:
 
@@ -310,9 +336,11 @@ The most important command-line options across benchmarks are:
 
 - `--model-name`: base causal LM
 - `--embedding-file`: pickled token embedding table
-- `--merge-factor`: number of prompt tokens merged into one latent embedding
+- `--merge-factor`: the K in K-Token Merging; it controls how many prompt tokens are compressed into one latent embedding
 - `--embedding-dim`: embedding size expected by the base model
 - `--gpu-ids`: devices used by the spawned workers
+- `--per-gpu-batch-size`: training batch size on each GPU/process
+- `--per-gpu-eval-batch-size`: evaluation batch size on each GPU/process
 - `--grad-accum-steps`: gradient accumulation factor during training
 - `--output-dir`: where checkpoints and metrics are written
 - `--resume-peft`, `--resume-encoder`, `--resume-optimizer`: resume training from saved artifacts
@@ -325,3 +353,9 @@ If you want to modify the method itself, these are the main files to start with:
 - `src/k_token_merging/compression.py`: how prompt embeddings are grouped and compressed
 - `src/k_token_merging/modeling.py`: LoRA setup, model loading, checkpoint saving
 - `scripts/*/run.py`: benchmark-specific training and evaluation loops
+
+todo:
+
+1. add paper reference
+2. fix the gen num of tree dataset
+3. testing run of all the script

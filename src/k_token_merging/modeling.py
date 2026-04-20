@@ -109,7 +109,7 @@ def load_compressor(
         merge_factor=merge_factor,
     ).to(device)
     if checkpoint_path:
-        compressor_state = torch.load(checkpoint_path, map_location=device)
+        compressor_state = torch.load(checkpoint_path, map_location=device, weights_only=True)
         normalized_state = {key.replace("module.", ""): value for key, value in compressor_state.items()}
         compressor.load_state_dict(normalized_state)
     return compressor
@@ -121,7 +121,7 @@ def maybe_load_optimizer_state(
     device: torch.device | str,
 ) -> None:
     if checkpoint_path and Path(checkpoint_path).exists():
-        optimizer.load_state_dict(torch.load(checkpoint_path, map_location=device))
+        optimizer.load_state_dict(torch.load(checkpoint_path, map_location=device, weights_only=True))
 
 
 def unwrap_module(module: torch.nn.Module) -> torch.nn.Module:

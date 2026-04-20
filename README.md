@@ -171,8 +171,8 @@ data/
 Each `tree_data_<stage>/` folder contains:
 
 - `tree_*.json`
-- `train_files_<stage>.csv`
-- `test_files_<stage>_3_token.csv`
+- `train_file_<stage>.csv`
+- `test_file_<stage>.csv`
 
 Built-in stage settings:
 

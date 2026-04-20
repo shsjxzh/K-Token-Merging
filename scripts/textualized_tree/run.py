@@ -151,7 +151,7 @@ def train_worker(
     device, gpu_rank = init_process(rank, world_size, args)
 
     data_dir = args.tree_data_root / f"tree_data_{stage}"
-    train_csv = data_dir / f"train_files_{stage}.csv"
+    train_csv = data_dir / f"train_file_{stage}.csv"
     train_examples = load_tree_examples(data_dir, train_csv)
     dataset = TextPairDataset(train_examples)
     sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=True)
@@ -254,7 +254,7 @@ def eval_worker(rank: int, world_size: int, stage: str, args: argparse.Namespace
     checkpoint_dir = args.checkpoint_dir if getattr(args, "checkpoint_dir", None) else args.output_dir / stage / "step_last"
 
     data_dir = args.tree_data_root / f"tree_data_{stage}"
-    test_csv = data_dir / f"test_files_{stage}_3_token.csv"
+    test_csv = data_dir / f"test_file_{stage}.csv"
     test_examples = load_tree_examples(data_dir, test_csv)
     dataset = TextPairDataset(test_examples)
     sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=False)

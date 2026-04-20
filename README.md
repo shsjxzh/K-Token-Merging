@@ -2,8 +2,8 @@
 
 This repo contains the code for our paper:<br>
 **Compressing Sequences in the Latent Embedding Space: $K$-Token Merging for Large Language Models**<br>
-Zihao Xu, JOhn Harvill, Ziwei Fan, Yizhou Sun, Hao Ding, Hao Wang<br>
-[[Paper](https://arxiv.org/abs/2302.02561)]
+Zihao Xu, John Harvill, Ziwei Fan, Yizhou Sun, Hao Ding, Hao Wang<br>
+[[Paper](https://arxiv.org/abs/2604.15153)]
 
 $K$-Token Merging is a latent-space prompt compression method for large language models. Instead of feeding every input token embedding into the model, it groups each contiguous block of $K$ tokens, merges that block into one learned latent embedding, and lets the language model read the compressed prefix during prefill. Generation still happens in the original token space.
 
@@ -13,7 +13,7 @@ This repository contains the code for training and evaluating that method on thr
 - Amazon Reviews
 - CommitPackFT
 
-On one representative benchmark (Textualized Tree), our $K$-Token Merging method ($K = 4$) achieves a $75\\%$ reduction in input length with only a $1.59\\%$ drop in accuracy, demonstrating that it exploits redundancy in the latent embedding space while preserving high performance. See our [paper](https://arxiv.org/abs/2302.02561) for more results.
+On one representative benchmark (Textualized Tree), our $K$-Token Merging method ($K = 4$) achieves a $75\\%$ reduction in input length with only a $1.59\\%$ drop in accuracy, demonstrating that it exploits redundancy in the latent embedding space while preserving high performance. See our [paper](https://arxiv.org/abs/2604.15153) for more results.
 
 <p align="center">
   <img src="assets/figures/teaser.png" alt="K-Token Merging teaser" width="560" />
@@ -40,12 +40,14 @@ The key idea is that prefill cost depends on the number of embeddings consumed b
 
 ## Repository Layout
 
-This section lists the source-controlled project structure only. Generated folders such as `data/`, `artifacts/`, and `outputs/` are intentionally omitted.
+This section shows the main project structure. Generated folders such as `data/`, `artifacts/`, and `outputs/` are intentionally omitted.
 
 ```text
 K-Token-Merging/
-├── assets/figures/                  # README and paper figures
-├── paper/                           # manuscript and figure sources
+├── README.md
+├── pyproject.toml
+├── requirements.txt
+├── assets/figures/                  # README figures
 ├── scripts/
 │   ├── amazon_reviews/run.py        # Amazon Reviews training/eval entry point
 │   ├── commitpackft/run.py          # CommitPackFT training/eval entry point
@@ -55,6 +57,7 @@ K-Token-Merging/
 │   │   └── run.py                   # tree benchmark training/eval entry point
 │   └── utils/extract_embeddings.py  # export base-model embedding table
 └── src/k_token_merging/
+    ├── __init__.py                  # public package exports
     ├── compression.py               # prompt compression utilities
     ├── data.py                      # dataset wrappers
     ├── encoder.py                   # average-initialized merge encoder
@@ -208,7 +211,7 @@ python scripts/textualized_tree/run.py train \
 
 If you do not pass `--per-gpu-batch-size`, the runner uses the original Token Compression per-stage defaults:
 
-| Stage     | Per-GPU Train Batch<br>(`merge_factor=2/3`) | Per-GPU Train Batch<br>(`merge_factor=4`) | Per-GPU Eval Batch |
+| Stage     | Per-GPU Train Batch(`merge_factor=2/3`) | Per-GPU Train Batch(`merge_factor=4`) | Per-GPU Eval Batch |
 | --------- | ---------------------------------------: | -------------------------------------: | -----------------: |
 | `small`   |                                      282 |                                    320 |                320 |
 | `xsmall`  |                                      192 |                                    320 |                320 |
@@ -357,11 +360,11 @@ If you want to modify the method itself, these are the main files to start with:
 
 ## Reference
 
-[Compressing Sequences in the Latent Embedding Space: $ K $-Token Merging for Large Language Models](https://arxiv.org/abs/2604.15153)
+[Compressing Sequences in the Latent Embedding Space: $K$-Token Merging for Large Language Models](https://arxiv.org/abs/2604.15153)
 
 ```bib
 @article{xu2026compressing,
-  title={Compressing Sequences in the Latent Embedding Space: $ K $-Token Merging for Large Language Models},
+  title={Compressing Sequences in the Latent Embedding Space: $K$-Token Merging for Large Language Models},
   author={Xu, Zihao and Harvill, John and Fan, Ziwei and Sun, Yizhou and Ding, Hao and Wang, Hao},
   journal={arXiv preprint arXiv:2604.15153},
   year={2026}

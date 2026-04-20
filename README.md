@@ -125,9 +125,13 @@ python scripts/textualized_tree/run.py train \
   --tree-data-root data \
   --stages small xsmall medium xmedium large x3large \
   --embedding-file artifacts/qwen2.5_0.5b_embeddings_id_full.pkl \
+  --gpu-ids 0 1 2 3 \
   --merge-factor 4 \
+  --grad-accum-steps 4 \
   --output-dir outputs/textualized_tree
 ```
+
+This follows the original project’s multi-GPU design: pass a GPU id list with `--gpu-ids`, and the runner will launch one worker per GPU with `mp.spawn` and `DistributedDataParallel`. `--grad-accum-steps` controls gradient accumulation inside each worker.
 
 Evaluate one stage:
 
@@ -147,7 +151,9 @@ Train:
 ```bash
 python scripts/amazon_reviews/run.py train \
   --embedding-file artifacts/qwen2.5_0.5b_embeddings_id_full.pkl \
+  --gpu-ids 0 1 2 3 \
   --merge-factor 4 \
+  --grad-accum-steps 4 \
   --output-dir outputs/amazon_reviews
 ```
 
@@ -167,7 +173,9 @@ Train:
 ```bash
 python scripts/commitpackft/run.py train \
   --embedding-file artifacts/qwen2.5_0.5b_embeddings_id_full.pkl \
+  --gpu-ids 0 1 2 3 \
   --merge-factor 2 \
+  --grad-accum-steps 4 \
   --output-dir outputs/commitpackft
 ```
 

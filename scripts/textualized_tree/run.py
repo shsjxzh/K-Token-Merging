@@ -49,6 +49,9 @@ def parse_args() -> argparse.Namespace:
     train_parser.add_argument("--eval-batch-size", type=int, default=32)
     train_parser.add_argument("--learning-rate", type=float, default=1e-4)
     train_parser.add_argument("--grad-accum-steps", type=int, default=1)
+    train_parser.add_argument("--stage-accuracy-threshold", type=float, default=85.0)
+    train_parser.add_argument("--final-stage-accuracy-threshold", type=float, default=95.0)
+    train_parser.add_argument("--max-stage-rounds", type=int)
     train_parser.add_argument("--save-steps", type=int, default=500)
     train_parser.add_argument("--output-dir", type=Path, default=Path("outputs/textualized_tree"))
     train_parser.add_argument("--resume-peft", type=Path)
@@ -148,7 +151,7 @@ def train_worker(
     device, gpu_rank = init_process(rank, world_size, args)
 
     data_dir = args.tree_data_root / f"tree_data_{stage}"
-    train_csv = data_dir / f"train_file_{stage}.csv"
+    train_csv = data_dir / f"train_files_{stage}.csv"
     train_examples = load_tree_examples(data_dir, train_csv)
     dataset = TextPairDataset(train_examples)
     sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=True)
@@ -251,7 +254,7 @@ def eval_worker(rank: int, world_size: int, stage: str, args: argparse.Namespace
     checkpoint_dir = args.checkpoint_dir if getattr(args, "checkpoint_dir", None) else args.output_dir / stage / "step_last"
 
     data_dir = args.tree_data_root / f"tree_data_{stage}"
-    test_csv = data_dir / f"test_file_{stage}.csv"
+    test_csv = data_dir / f"test_files_{stage}_3_token.csv"
     test_examples = load_tree_examples(data_dir, test_csv)
     dataset = TextPairDataset(test_examples)
     sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=False)
@@ -320,6 +323,12 @@ def eval_worker(rank: int, world_size: int, stage: str, args: argparse.Namespace
     dist.destroy_process_group()
 
 
+def required_accuracy(stage: str, stages: list[str], args: argparse.Namespace) -> float:
+    if stage == stages[-1]:
+        return args.final_stage_accuracy_threshold
+    return args.stage_accuracy_threshold
+
+
 def run_train(args: argparse.Namespace) -> None:
     set_seed(args.seed)
     args.gpu_ids = resolve_gpu_ids(args)
@@ -335,28 +344,55 @@ def run_train(args: argparse.Namespace) -> None:
     optimizer_path = str(args.resume_optimizer) if args.resume_optimizer else None
 
     for stage in args.stages:
-        mp.spawn(
-            train_worker,
-            args=(world_size, stage, args, peft_path, compressor_path, optimizer_path),
-            nprocs=world_size,
-            join=True,
-        )
-        mp.spawn(
-            eval_worker,
-            args=(world_size, stage, args),
-            nprocs=world_size,
-            join=True,
-        )
+        stage_target = required_accuracy(stage, args.stages, args)
+        round_index = 0
 
-        eval_path = args.output_dir / stage / "step_last" / "eval_accuracy.json"
-        if eval_path.exists():
+        while True:
+            round_index += 1
+            print(
+                f"Training stage '{stage}' round {round_index} "
+                f"with target accuracy {stage_target:.2f}%"
+            )
+
+            mp.spawn(
+                train_worker,
+                args=(world_size, stage, args, peft_path, compressor_path, optimizer_path),
+                nprocs=world_size,
+                join=True,
+            )
+            mp.spawn(
+                eval_worker,
+                args=(world_size, stage, args),
+                nprocs=world_size,
+                join=True,
+            )
+
+            eval_path = args.output_dir / stage / "step_last" / "eval_accuracy.json"
+            if not eval_path.exists():
+                raise RuntimeError(f"Missing evaluation file after stage '{stage}': {eval_path}")
+
             with open(eval_path, "r", encoding="utf-8") as handle:
                 accuracy = json.load(handle)["accuracy"]
             print(f"Accuracy on {stage}: {accuracy:.2f}%")
 
-        peft_path = str(args.output_dir / stage / "step_last")
-        compressor_path = str(args.output_dir / stage / "step_last" / "encoder.pth")
-        optimizer_path = str(args.output_dir / stage / "step_last" / "optimizer.pt")
+            peft_path = str(args.output_dir / stage / "step_last")
+            compressor_path = str(args.output_dir / stage / "step_last" / "encoder.pth")
+            optimizer_path = str(args.output_dir / stage / "step_last" / "optimizer.pt")
+
+            if accuracy >= stage_target:
+                print(
+                    f"Stage '{stage}' passed: {accuracy:.2f}% >= {stage_target:.2f}%."
+                )
+                break
+
+            print(
+                f"Stage '{stage}' will repeat because {accuracy:.2f}% < {stage_target:.2f}%."
+            )
+            if args.max_stage_rounds is not None and round_index >= args.max_stage_rounds:
+                raise RuntimeError(
+                    f"Stage '{stage}' did not reach {stage_target:.2f}% within "
+                    f"{args.max_stage_rounds} rounds."
+                )
 
 
 def run_evaluate(args: argparse.Namespace) -> None:

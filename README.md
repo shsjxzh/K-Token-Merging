@@ -1,60 +1,87 @@
 # K-Token Merging
 
-Open-source release of the method described in the paper **"Compressing Sequences in the Latent Embedding Space: $K$-Token Merging for Large Language Models."**
+K-Token Merging is a latent-space prompt compression method for large language models. Instead of feeding every input token embedding into the model, it groups each contiguous block of `K` tokens, merges that block into one learned latent embedding, and lets the language model read the compressed prefix during prefill. Generation still happens in the original token space.
 
-This repository is built from the original `Token Compression` research folder, but reorganized for public use. The focus here is the core method from the paper: a lightweight encoder that merges each contiguous block of `K` token embeddings into a single latent embedding, followed by a LoRA-adapted LLM that reads the compressed prefix while still generating in the original vocabulary.
+This repository contains the code for training and evaluating that method on three benchmarks:
 
-The paper reports that **K-Token Merging reaches up to 75% input-length reduction with minimal degradation**, and the teaser figure highlights the `K=4` case on Textualized Tree with only a `1.59%` accuracy drop while reducing input length by `75%`.
+- Textualized Tree
+- Amazon Reviews
+- CommitPackFT
+
+The paper reports that K-Token Merging can substantially reduce effective input length while preserving downstream performance.
 
 ![K-Token Merging teaser](assets/figures/teaser.png)
 
-The model structure follows the paper directly: compression happens only on the input side during prefill, while generation stays in the original token space.
+Compression is applied only to the prompt side. The answer side remains standard autoregressive generation.
 
 ![K-Token Merging model overview](assets/figures/model_overview.png)
 
-## What is included
+## How It Works
 
-- Shared method code for the average-initialized encoder, prompt compression, LoRA loading, and evaluation utilities.
-- Reorganized benchmark runners for the three tasks used in the paper:
-  - Textualized Tree
-  - Amazon Reviews
-  - CommitPackFT
-- A cleaned embedding-extraction utility.
+At a high level, the training and inference flow is:
 
-## Project layout
+1. Tokenize the input prompt.
+2. Look up base-model token embeddings from a cached embedding table.
+3. Split the prompt embeddings into contiguous blocks of size `K`.
+4. Merge each block with a lightweight encoder that is initialized to behave like mean pooling and then trained jointly with LoRA adapters.
+5. Feed the compressed prefix into the base LLM.
+6. Train or evaluate on the original downstream task.
+
+The key idea is that prefill cost depends on the number of embeddings consumed by the model. Compressing the prompt before prefill reduces that length while keeping the rest of the generation pipeline unchanged.
+
+## Repository Layout
+
+This section lists the source-controlled project structure only. Generated folders such as `data/`, `artifacts/`, and `outputs/` are intentionally omitted.
 
 ```text
 K-Token-Merging/
-├── assets/figures/              # README-ready figures exported from the paper
+├── assets/figures/                  # README and paper figures
+├── paper/                           # manuscript and figure sources
 ├── scripts/
-│   ├── amazon_reviews/
-│   ├── commitpackft/
+│   ├── amazon_reviews/run.py        # Amazon Reviews training/eval entry point
+│   ├── commitpackft/run.py          # CommitPackFT training/eval entry point
 │   ├── textualized_tree/
-│   └── utils/
-└── src/k_token_merging/         # shared method implementation
+│   │   ├── generate_data.py         # generate one tree dataset
+│   │   ├── generate_curriculum_datasets.py
+│   │   └── run.py                   # tree benchmark training/eval entry point
+│   └── utils/extract_embeddings.py  # export base-model embedding table
+└── src/k_token_merging/
+    ├── compression.py               # prompt compression utilities
+    ├── data.py                      # dataset wrappers
+    ├── encoder.py                   # average-initialized merge encoder
+    ├── metrics.py                   # evaluation metrics
+    └── modeling.py                  # model, LoRA, checkpoint helpers
 ```
 
-This structure mirrors the paper:
-
-- `src/k_token_merging/` contains the reusable method components from the **Method** and **Implementation Details** sections.
-- `scripts/textualized_tree`, `scripts/amazon_reviews`, and `scripts/commitpackft` map to the three datasets in the **Datasets & Tasks** section.
-- `paper/` preserves the original manuscript and figure sources used to describe the method.
-
 ## Installation
+
+From the repository root:
 
 ```bash
 pip install -e .
 ```
 
-Or install the direct dependencies:
+or
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Preparing embeddings
+The project targets Python `>=3.10`.
 
-We need a cached embedding table from the base model. It can be produced by the following utility script:
+## Before You Train
+
+You need:
+
+- a base causal LM, defaulting to `Qwen/Qwen2.5-0.5B`
+- an exported embedding table for that base model
+- access to the benchmark data
+  - Textualized Tree is generated locally
+  - Amazon Reviews and CommitPackFT are downloaded from Hugging Face on first use
+
+### 1. Export the Embedding Table
+
+The training scripts expect a pickled embedding table containing one vector per token id:
 
 ```bash
 python scripts/utils/extract_embeddings.py \
@@ -62,9 +89,48 @@ python scripts/utils/extract_embeddings.py \
   --output-file artifacts/qwen2.5_0.5b_embeddings_id_full.pkl
 ```
 
-## Running the benchmarks
+Useful options:
 
-### 1. Textualized Tree
+- `--dtype {float16,bfloat16,float32}` controls the export precision
+- `--device` controls where the base model is loaded during extraction
+
+### 2. Choose a Launch Mode
+
+Each benchmark runner uses `torch.multiprocessing.spawn` internally.
+
+- For multi-GPU training, pass `--gpu-ids 0 1 2 3` or another GPU list.
+- For a single-device run, omit `--gpu-ids` and use the default `--device`.
+
+## Quick Start
+
+If you want the shortest path from clone to first run:
+
+```bash
+pip install -e .
+
+python scripts/utils/extract_embeddings.py \
+  --model-name Qwen/Qwen2.5-0.5B \
+  --output-file artifacts/qwen2.5_0.5b_embeddings_id_full.pkl
+
+python scripts/textualized_tree/generate_curriculum_datasets.py \
+  --output-root data \
+  --write-summary
+
+python scripts/textualized_tree/run.py train \
+  --tree-data-root data \
+  --embedding-file artifacts/qwen2.5_0.5b_embeddings_id_full.pkl \
+  --gpu-ids 0 1 2 3 \
+  --merge-factor 4 \
+  --output-dir outputs/textualized_tree
+```
+
+That run trains stage by stage across the default tree curriculum and evaluates each stage after training.
+
+## Benchmarks
+
+### Textualized Tree
+
+This benchmark turns tree-structured data into text and asks parent/child relationship questions. The repository includes both dataset generation and training code.
 
 Generate one dataset manually:
 
@@ -79,7 +145,7 @@ python scripts/textualized_tree/generate_data.py \
   --stage-name large
 ```
 
-Generate the full curriculum used by the tree benchmark:
+Generate the full curriculum:
 
 ```bash
 python scripts/textualized_tree/generate_curriculum_datasets.py \
@@ -89,10 +155,11 @@ python scripts/textualized_tree/generate_curriculum_datasets.py \
   --write-summary
 ```
 
-This creates the stage directories expected by the runner:
+This produces directories like:
 
 ```text
 data/
+├── curriculum_summary.json
 ├── tree_data_small/
 ├── tree_data_xsmall/
 ├── tree_data_medium/
@@ -101,13 +168,13 @@ data/
 └── tree_data_x3large/
 ```
 
-Each stage directory contains:
+Each `tree_data_<stage>/` folder contains:
 
 - `tree_*.json`
-- `train_file_<stage>.csv`
-- `test_file_<stage>.csv`
+- `train_files_<stage>.csv`
+- `test_files_<stage>_3_token.csv`
 
-The built-in curriculum stage settings are taken from the original research configs:
+Built-in stage settings:
 
 | Stage | Max Depth | Max Nodes | Min Children | Max Children |
 | --- | ---: | ---: | ---: | ---: |
@@ -118,7 +185,7 @@ The built-in curriculum stage settings are taken from the original research conf
 | `large` | 4 | 30 | 1 | 3 |
 | `x3large` | 4 | 150 | 3 | 5 |
 
-Train across the full curriculum:
+Train across the curriculum:
 
 ```bash
 python scripts/textualized_tree/run.py train \
@@ -131,9 +198,12 @@ python scripts/textualized_tree/run.py train \
   --output-dir outputs/textualized_tree
 ```
 
-This follows the original project’s multi-GPU design: pass a GPU id list with `--gpu-ids`, and the runner will launch one worker per GPU with `mp.spawn` and `DistributedDataParallel`. `--grad-accum-steps` controls gradient accumulation inside each worker.
+Curriculum behavior matches the original training recipe:
 
-Evaluate one stage:
+- a stage advances only after reaching at least `85%` accuracy
+- the final `x3large` stage only finishes after reaching at least `95%` accuracy
+
+Evaluate one saved stage:
 
 ```bash
 python scripts/textualized_tree/run.py evaluate \
@@ -144,12 +214,17 @@ python scripts/textualized_tree/run.py evaluate \
   --checkpoint-dir outputs/textualized_tree/x3large/step_last
 ```
 
-### 2. Amazon Reviews
+Evaluation writes `eval_accuracy.json` into the checkpoint directory.
+
+### Amazon Reviews
+
+This benchmark treats review sentiment as a text classification problem using next-token prediction over label words.
 
 Train:
 
 ```bash
 python scripts/amazon_reviews/run.py train \
+  --dataset-name Amazon_Fashion \
   --embedding-file artifacts/qwen2.5_0.5b_embeddings_id_full.pkl \
   --gpu-ids 0 1 2 3 \
   --merge-factor 4 \
@@ -161,17 +236,28 @@ Evaluate:
 
 ```bash
 python scripts/amazon_reviews/run.py evaluate \
+  --dataset-name Amazon_Fashion \
   --embedding-file artifacts/qwen2.5_0.5b_embeddings_id_full.pkl \
   --merge-factor 4 \
   --checkpoint-dir outputs/amazon_reviews/Amazon_Fashion/step_last
 ```
 
-### 3. CommitPackFT
+Evaluation writes `eval_accuracy.json` into the checkpoint directory.
+
+Useful task-specific options:
+
+- `--test-size` controls the held-out split size
+- `--train-sample-fraction` subsamples the training portion for faster runs
+
+### CommitPackFT
+
+This benchmark uses commit editing data and evaluates the model as a code-generation system. The default language is `python`.
 
 Train:
 
 ```bash
 python scripts/commitpackft/run.py train \
+  --language python \
   --embedding-file artifacts/qwen2.5_0.5b_embeddings_id_full.pkl \
   --gpu-ids 0 1 2 3 \
   --merge-factor 2 \
@@ -183,19 +269,57 @@ Evaluate:
 
 ```bash
 python scripts/commitpackft/run.py evaluate \
+  --language python \
   --embedding-file artifacts/qwen2.5_0.5b_embeddings_id_full.pkl \
   --merge-factor 2 \
   --checkpoint-dir outputs/commitpackft/python/step_last
 ```
 
-## Method summary
+Evaluation writes `eval_perplexity.json` into the checkpoint directory.
 
-Following the paper:
+## Checkpoints and Outputs
 
-1. Split the input prompt into contiguous `K`-token blocks.
-2. Map each block of token ids to base-model embeddings.
-3. Merge each block with a lightweight three-layer MLP plus residual mean pooling.
-4. Feed the compressed prefix into a LoRA-adapted LLM.
-5. Compute training loss only on the uncompressed answer tokens.
+Each training run saves a `step_last/` directory that contains:
 
-This preserves standard generation while reducing the effective input length during prefill.
+- LoRA adapter weights saved by PEFT
+- `encoder.pth` for the K-token merge encoder
+- `optimizer.pt` when training checkpoints are saved
+- `metrics.json` with run metadata
+- evaluation output such as `eval_accuracy.json` or `eval_perplexity.json`
+
+Typical output layout:
+
+```text
+outputs/
+└── <benchmark>/
+    └── <stage-or-subset>/
+        └── step_last/
+            ├── adapter_config.json
+            ├── adapter_model.*
+            ├── encoder.pth
+            ├── metrics.json
+            ├── optimizer.pt
+            └── eval_*.json
+```
+
+## Main Configuration Knobs
+
+The most important command-line options across benchmarks are:
+
+- `--model-name`: base causal LM
+- `--embedding-file`: pickled token embedding table
+- `--merge-factor`: number of prompt tokens merged into one latent embedding
+- `--embedding-dim`: embedding size expected by the base model
+- `--gpu-ids`: devices used by the spawned workers
+- `--grad-accum-steps`: gradient accumulation factor during training
+- `--output-dir`: where checkpoints and metrics are written
+- `--resume-peft`, `--resume-encoder`, `--resume-optimizer`: resume training from saved artifacts
+
+## Codebase Map
+
+If you want to modify the method itself, these are the main files to start with:
+
+- `src/k_token_merging/encoder.py`: merge encoder architecture
+- `src/k_token_merging/compression.py`: how prompt embeddings are grouped and compressed
+- `src/k_token_merging/modeling.py`: LoRA setup, model loading, checkpoint saving
+- `scripts/*/run.py`: benchmark-specific training and evaluation loops

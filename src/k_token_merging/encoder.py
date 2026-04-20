@@ -40,7 +40,6 @@ class AverageInitializedEncoder(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         batch_size = x.size(0)
-        x_reshaped = x.view(batch_size, self.embedding_dim, self.merge_factor)
-        x_mean = x_reshaped.mean(dim=-1)
+        x_reshaped = x.view(batch_size, self.merge_factor, self.embedding_dim)
+        x_mean = x_reshaped.mean(dim=1)
         return x_mean + self.net(x)
-

@@ -208,7 +208,7 @@ python scripts/textualized_tree/run.py train \
 
 If you do not pass `--per-gpu-batch-size`, the runner uses the original Token Compression per-stage defaults:
 
-| Stage     | Per-GPU Train Batch (`merge_factor=2/3`) | Per-GPU Train Batch (`merge_factor=4`) | Per-GPU Eval Batch |
+| Stage     | Per-GPU Train Batch<br>(`merge_factor=2/3`) | Per-GPU Train Batch<br>(`merge_factor=4`) | Per-GPU Eval Batch |
 | --------- | ---------------------------------------: | -------------------------------------: | -----------------: |
 | `small`   |                                      282 |                                    320 |                320 |
 | `xsmall`  |                                      192 |                                    320 |                320 |

@@ -124,6 +124,10 @@ def maybe_load_optimizer_state(
         optimizer.load_state_dict(torch.load(checkpoint_path, map_location=device))
 
 
+def unwrap_module(module: torch.nn.Module) -> torch.nn.Module:
+    return module.module if hasattr(module, "module") else module
+
+
 def save_artifacts(
     output_dir: str | Path,
     peft_model: torch.nn.Module,
@@ -133,10 +137,9 @@ def save_artifacts(
 ) -> None:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    peft_model.save_pretrained(output_dir)
-    torch.save(compressor.state_dict(), output_dir / "encoder.pth")
+    unwrap_module(peft_model).save_pretrained(output_dir)
+    torch.save(unwrap_module(compressor).state_dict(), output_dir / "encoder.pth")
     if optimizer is not None:
         torch.save(optimizer.state_dict(), output_dir / "optimizer.pt")
     if metadata is not None:
         save_json(output_dir / "metrics.json", metadata)
-

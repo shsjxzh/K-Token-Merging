@@ -1,8 +1,11 @@
 # K-Token Merging
 
-K-Token Merging is a latent-space prompt compression method for large language models. Instead of feeding every input token embedding into the model, it groups each contiguous block of `K` tokens, merges that block into one learned latent embedding, and lets the language model read the compressed prefix during prefill. Generation still happens in the original token space.
+This repo contains the code for our paper:<br>
+**Compressing Sequences in the Latent Embedding Space: $ K $-Token Merging for Large Language Models**<br>
+Zihao Xu, JOhn Harvill, Ziwei Fan, Yizhou Sun, Hao Ding, Hao Wang<br>
+[[Paper](https://arxiv.org/abs/2302.02561)]
 
-In this codebase, `merge-factor` is exactly that `K`. It denotes how many prompt tokens are compressed into 1 latent token. For example, `--merge-factor 4` means every 4 prompt tokens are merged into 1 compressed token embedding before prefill.
+$K$-Token Merging is a latent-space prompt compression method for large language models. Instead of feeding every input token embedding into the model, it groups each contiguous block of $K$ tokens, merges that block into one learned latent embedding, and lets the language model read the compressed prefix during prefill. Generation still happens in the original token space.
 
 This repository contains the code for training and evaluating that method on three benchmarks:
 
@@ -10,13 +13,15 @@ This repository contains the code for training and evaluating that method on thr
 - Amazon Reviews
 - CommitPackFT
 
-The paper reports that K-Token Merging can substantially reduce effective input length while preserving downstream performance.
+On one representative benchmark (Textualized Tree), our $K$-Token Merging method ($K = 4$) achieves a $75\%$ reduction in input length with only a $1.59\%$ drop in accuracy, demonstrating that it exploits redundancy in the latent embedding space while preserving high performance. See our [paper](https://arxiv.org/abs/2302.02561) for more results.
 
 <p align="center">
   <img src="assets/figures/teaser.png" alt="K-Token Merging teaser" width="560" />
 </p>
 
-Compression is applied only to the prompt side. The answer side remains standard autoregressive generation.
+## Model Structure
+
+We describe the model's workflow in two stages: the **prefill** stage and the **generation** stage. During the prefill stage, the encoder $f$ takes each $K$ consecutive input tokens and produces a single compressed token embedding. For the generation stage, the LLM outputs *original* (uncompressed) tokens. Each newly generated token is appended to the mixed compressed/uncompressed prefix, after which standard auto-regressive generation continues.
 
 ![K-Token Merging model overview](assets/figures/model_overview.png)
 
@@ -96,7 +101,6 @@ python scripts/utils/extract_embeddings.py \
 Useful options:
 
 - `--dtype {float16,bfloat16,float32}` controls the export precision
-- `--device` controls where the base model is loaded during extraction
 
 ### 2. Choose a Launch Mode
 
@@ -159,8 +163,6 @@ python scripts/textualized_tree/generate_curriculum_datasets.py \
   --write-summary
 ```
 
-The default `--num-trees` is `500000`, matching the original Token Compression textualized-tree scale. The original release stores `50` JSON shards per stage, and each shard contains examples from `10000` trees (`50000` questions at `5` questions per tree), so each stage corresponds to `500000` trees total.
-
 This produces directories like:
 
 ```text
@@ -181,7 +183,6 @@ Each `tree_data_<stage>/` folder contains:
 - `test_file_<stage>.csv`
 
 Built-in stage settings:
-
 
 | Stage     | Max Depth | Max Nodes | Min Children | Max Children |
 | --------- | --------: | --------: | -----------: | -----------: |
@@ -226,7 +227,7 @@ effective_batch_size = per_gpu_batch_size * num_gpus * grad_accum_steps
 
 For example, `per_gpu_batch_size=48`, `num_gpus=4`, and `grad_accum_steps=4` gives an effective batch size of `768`.
 
-Curriculum behavior matches the original training recipe:
+We have the following training recipe:
 
 - a stage advances only after reaching at least `85%` accuracy
 - the final `x3large` stage only finishes after reaching at least `95%` accuracy
@@ -336,7 +337,7 @@ The most important command-line options across benchmarks are:
 
 - `--model-name`: base causal LM
 - `--embedding-file`: pickled token embedding table
-- `--merge-factor`: the K in K-Token Merging; it controls how many prompt tokens are compressed into one latent embedding
+- `--merge-factor`: the $K$ in $K$-Token Merging; it controls how many prompt tokens are compressed into one latent embedding
 - `--embedding-dim`: embedding size expected by the base model
 - `--gpu-ids`: devices used by the spawned workers
 - `--per-gpu-batch-size`: training batch size on each GPU/process
@@ -354,8 +355,16 @@ If you want to modify the method itself, these are the main files to start with:
 - `src/k_token_merging/modeling.py`: LoRA setup, model loading, checkpoint saving
 - `scripts/*/run.py`: benchmark-specific training and evaluation loops
 
-todo:
+## Reference
 
-1. add paper reference
-2. fix the gen num of tree dataset
-3. testing run of all the script
+[Compressing Sequences in the Latent Embedding Space: $ K $-Token Merging for Large Language Models](https://arxiv.org/abs/2604.15153)
+
+```bib
+@article{xu2026compressing,
+  title={Compressing Sequences in the Latent Embedding Space: $ K $-Token Merging for Large Language Models},
+  author={Xu, Zihao and Harvill, John and Fan, Ziwei and Sun, Yizhou and Ding, Hao and Wang, Hao},
+  journal={arXiv preprint arXiv:2604.15153},
+  year={2026}
+}
+```
+

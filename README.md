@@ -10,7 +10,9 @@ This repository contains the code for training and evaluating that method on thr
 
 The paper reports that K-Token Merging can substantially reduce effective input length while preserving downstream performance.
 
-![K-Token Merging teaser](assets/figures/teaser.png)
+<p align="center">
+  <img src="assets/figures/teaser.png" alt="K-Token Merging teaser" width="560" />
+</p>
 
 Compression is applied only to the prompt side. The answer side remains standard autoregressive generation.
 

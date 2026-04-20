@@ -31,12 +31,12 @@ At a high level, the training and inference flow is:
 
 1. Tokenize the input prompt.
 2. Look up base-model token embeddings from a cached embedding table.
-3. Split the prompt embeddings into contiguous blocks of size `K`.
+3. Split the prompt embeddings into contiguous blocks of size $K$.
 4. Merge each block with a lightweight encoder that is initialized to behave like mean pooling and then trained jointly with LoRA adapters.
 5. Feed the compressed prefix into the base LLM.
 6. Train or evaluate on the original downstream task.
 
-The key idea is that prefill cost depends on the number of embeddings consumed by the model. Compressing the prompt before prefill reduces that length while keeping the rest of the generation pipeline unchanged. With merge factor `K`, the compressed prompt length is approximately `1/K` of the original prompt length, up to padding to a multiple of `K`.
+The key idea is that prefill cost depends on the number of embeddings consumed by the model. Compressing the prompt before prefill reduces that length while keeping the rest of the generation pipeline unchanged. With merge factor $K$, the compressed prompt length is approximately $\frac{1}{K}$ of the original prompt length, up to padding to a multiple of $K$.
 
 ## Repository Layout
 

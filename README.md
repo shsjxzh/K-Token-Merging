@@ -20,26 +20,12 @@ The model structure follows the paper directly: compression happens only on the 
   - Amazon Reviews
   - CommitPackFT
 - A cleaned embedding-extraction utility.
-- The original paper source and figures under [`paper/`](paper).
-
-## What is intentionally excluded
-
-This release does **not** include:
-
-- LLMLingua2 code
-- LoseLess Token Compression / LTSC baseline code
-- SelectiveContext baseline code
-- pretrained checkpoints
-- training runs, TensorBoard logs, optimizer dumps, or other local experiment artifacts
-
-The goal is to open-source **K-Token Merging itself**, not the full internal comparison workspace.
 
 ## Project layout
 
 ```text
 K-Token-Merging/
 ├── assets/figures/              # README-ready figures exported from the paper
-├── paper/                       # original paper source copied from the research folder
 ├── scripts/
 │   ├── amazon_reviews/
 │   ├── commitpackft/
@@ -68,7 +54,7 @@ pip install -r requirements.txt
 
 ## Preparing embeddings
 
-The original code uses a cached embedding table from the base model. This release keeps that workflow as a utility script:
+We need a cached embedding table from the base model. It can be produced by the following utility script:
 
 ```bash
 python scripts/utils/extract_embeddings.py \
@@ -80,7 +66,7 @@ python scripts/utils/extract_embeddings.py \
 
 ### 1. Textualized Tree
 
-Generate synthetic tree files:
+Generate one dataset manually:
 
 ```bash
 python scripts/textualized_tree/generate_data.py \
@@ -89,20 +75,61 @@ python scripts/textualized_tree/generate_data.py \
   --min-children 1 \
   --max-children 3 \
   --num-trees 1000 \
-  --save-dir data/tree_data_large
+  --save-dir data/tree_data_large \
+  --stage-name large
 ```
 
-Train:
+Generate the full curriculum used by the tree benchmark:
+
+```bash
+python scripts/textualized_tree/generate_curriculum_datasets.py \
+  --output-root data \
+  --stages small xsmall medium xmedium large x3large \
+  --num-trees 1000 \
+  --write-summary
+```
+
+This creates the stage directories expected by the runner:
+
+```text
+data/
+├── tree_data_small/
+├── tree_data_xsmall/
+├── tree_data_medium/
+├── tree_data_xmedium/
+├── tree_data_large/
+└── tree_data_x3large/
+```
+
+Each stage directory contains:
+
+- `tree_*.json`
+- `train_file_<stage>.csv`
+- `test_file_<stage>.csv`
+
+The built-in curriculum stage settings are taken from the original research configs:
+
+| Stage | Max Depth | Max Nodes | Min Children | Max Children |
+| --- | ---: | ---: | ---: | ---: |
+| `small` | 2 | 3 | 0 | 2 |
+| `xsmall` | 3 | 5 | 0 | 2 |
+| `medium` | 3 | 10 | 0 | 3 |
+| `xmedium` | 4 | 15 | 1 | 3 |
+| `large` | 4 | 30 | 1 | 3 |
+| `x3large` | 4 | 150 | 3 | 5 |
+
+Train across the full curriculum:
 
 ```bash
 python scripts/textualized_tree/run.py train \
   --tree-data-root data \
+  --stages small xsmall medium xmedium large x3large \
   --embedding-file artifacts/qwen2.5_0.5b_embeddings_id_full.pkl \
   --merge-factor 4 \
   --output-dir outputs/textualized_tree
 ```
 
-Evaluate:
+Evaluate one stage:
 
 ```bash
 python scripts/textualized_tree/run.py evaluate \

@@ -27,7 +27,7 @@ from k_token_merging import (
 from k_token_merging.data import PromptExample, TextPairDataset
 
 
-DEFAULT_STAGES = ["small", "medium", "xmedium", "large", "x3large"]
+DEFAULT_STAGES = ["small", "xsmall", "medium", "xmedium", "large", "x3large"]
 
 
 def parse_args() -> argparse.Namespace:
@@ -104,8 +104,8 @@ def train_stage(
     embedding_table: torch.Tensor,
 ) -> tuple[torch.nn.Module, torch.nn.Module]:
     data_dir = args.tree_data_root / f"tree_data_{stage}"
-    train_csv = data_dir / f"train_files_{stage}.csv"
-    test_csv = data_dir / f"test_files_{stage}_3_token.csv"
+    train_csv = data_dir / f"train_file_{stage}.csv"
+    test_csv = data_dir / f"test_file_{stage}.csv"
 
     train_examples = load_tree_examples(data_dir, train_csv)
     test_examples = load_tree_examples(data_dir, test_csv)
@@ -222,7 +222,7 @@ def run_evaluate(args: argparse.Namespace) -> None:
     embedding_layer = peft_model.get_input_embeddings()
 
     data_dir = args.tree_data_root / f"tree_data_{args.stage}"
-    test_csv = data_dir / f"test_files_{args.stage}_3_token.csv"
+    test_csv = data_dir / f"test_file_{args.stage}.csv"
     test_examples = load_tree_examples(data_dir, test_csv)
     test_loader = DataLoader(TextPairDataset(test_examples), batch_size=args.batch_size, shuffle=False)
 

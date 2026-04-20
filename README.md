@@ -13,7 +13,7 @@ This repository contains the code for training and evaluating that method on thr
 - Amazon Reviews
 - CommitPackFT
 
-On one representative benchmark (Textualized Tree), our $K$-Token Merging method ($K = 4$) achieves a $75\%$ reduction in input length with only a $1.59\%$ drop in accuracy, demonstrating that it exploits redundancy in the latent embedding space while preserving high performance. See our [paper](https://arxiv.org/abs/2302.02561) for more results.
+On one representative benchmark (Textualized Tree), our $K$-Token Merging method ($K = 4$) achieves a $75\\%$ reduction in input length with only a $1.59\%$ drop in accuracy, demonstrating that it exploits redundancy in the latent embedding space while preserving high performance. See our [paper](https://arxiv.org/abs/2302.02561) for more results.
 
 <p align="center">
   <img src="assets/figures/teaser.png" alt="K-Token Merging teaser" width="560" />

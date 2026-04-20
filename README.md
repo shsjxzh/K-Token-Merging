@@ -1,7 +1,7 @@
 # K-Token Merging
 
 This repo contains the code for our paper:<br>
-**Compressing Sequences in the Latent Embedding Space: $ K $-Token Merging for Large Language Models**<br>
+**Compressing Sequences in the Latent Embedding Space: $K$-Token Merging for Large Language Models**<br>
 Zihao Xu, JOhn Harvill, Ziwei Fan, Yizhou Sun, Hao Ding, Hao Wang<br>
 [[Paper](https://arxiv.org/abs/2302.02561)]
 

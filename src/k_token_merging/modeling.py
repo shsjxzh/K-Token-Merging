@@ -137,7 +137,7 @@ def save_artifacts(
 ) -> None:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    unwrap_module(peft_model).save_pretrained(output_dir)
+    unwrap_module(peft_model).save_pretrained(output_dir, save_embedding_layers=True)
     torch.save(unwrap_module(compressor).state_dict(), output_dir / "encoder.pth")
     if optimizer is not None:
         torch.save(optimizer.state_dict(), output_dir / "optimizer.pt")

@@ -100,12 +100,13 @@ def format_example(example: dict) -> PromptExample:
 
 
 def load_examples(dataset_name: str, test_size: int, sample_fraction: float | None, seed: int) -> tuple[list[PromptExample], list[PromptExample]]:
-    dataset = load_dataset(
+    full_dataset = load_dataset(
         "McAuley-Lab/Amazon-Reviews-2023",
         f"raw_review_{dataset_name}",
+        split="full",
         trust_remote_code=True,
     )
-    split_dataset = dataset["full"].train_test_split(test_size=test_size, seed=seed)
+    split_dataset = full_dataset.train_test_split(test_size=test_size, seed=seed)
     train_split = split_dataset["train"]
     if sample_fraction is not None and sample_fraction < 1.0:
         sample_count = max(1, int(len(train_split) * sample_fraction))

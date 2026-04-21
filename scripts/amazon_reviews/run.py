@@ -48,7 +48,7 @@ def parse_args() -> argparse.Namespace:
     train_parser.add_argument("--dataset-name", default="Amazon_Fashion")
     train_parser.add_argument("--test-size", type=int, default=50000)
     train_parser.add_argument("--train-sample-fraction", type=float, default=0.1)
-    train_parser.add_argument("--per-gpu-batch-size", type=int, default=2)
+    train_parser.add_argument("--per-gpu-batch-size", type=int, default=3)
     train_parser.add_argument("--per-gpu-eval-batch-size", type=int, default=16)
     train_parser.add_argument("--epochs", type=int, default=1)
     train_parser.add_argument("--learning-rate", type=float, default=1e-4)

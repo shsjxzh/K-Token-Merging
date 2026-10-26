@@ -3,7 +3,7 @@
 This repo contains the code for our paper:<br>
 **Compressing Sequences in the Latent Embedding Space: $K$-Token Merging for Large Language Models**<br>
 Zihao Xu, John Harvill, Ziwei Fan, Yizhou Sun, Hao Ding, Hao Wang<br>
-[[Paper](https://arxiv.org/abs/2604.15153)]
+[[Paper](https://arxiv.org/abs/2604.15153)][[Slides](assets/K-Token-Merging.pdf)]
 
 $K$-Token Merging is a latent-space prompt compression method for large language models. Instead of feeding every input token embedding into the model, it groups each contiguous block of $K$ tokens, merges that block into one learned latent embedding, and lets the language model read the compressed prefix during prefill. Generation still happens in the original token space.
 
